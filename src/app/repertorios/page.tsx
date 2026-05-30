@@ -147,8 +147,8 @@ export default function RepertoriosSalvosPage() {
         <div
           className={`mb-6 rounded-md p-3 text-sm ${
             mensagem.tipo === "sucesso"
-              ? "bg-green-50 text-green-800 border border-green-200"
-              : "bg-red-50 text-red-800 border border-red-200"
+              ? "bg-green-50 text-green-800 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800"
+              : "bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800"
           }`}
         >
           {mensagem.texto}
@@ -178,7 +178,7 @@ export default function RepertoriosSalvosPage() {
                     <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                       {rep.repertorio_musicas.length} música{rep.repertorio_musicas.length !== 1 ? "s" : ""}
                     </span>
-                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                       {rep.tipo_exportacao === "partitura" ? "Partituras" : "Cifras"}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-0.5 text-xs text-muted-foreground">

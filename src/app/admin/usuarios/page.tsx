@@ -106,8 +106,8 @@ export default function AdminUsuariosPage() {
         <div
           className={`mb-6 rounded-md p-3 text-sm ${
             mensagem.tipo === "sucesso"
-              ? "bg-green-50 text-green-800 border border-green-200"
-              : "bg-red-50 text-red-800 border border-red-200"
+              ? "bg-green-50 text-green-800 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800"
+              : "bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800"
           }`}
         >
           {mensagem.texto}

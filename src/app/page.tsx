@@ -466,7 +466,7 @@ export default function Home() {
                       isOpen
                         ? "border-primary/40 bg-primary/5"
                         : temSelecionadas
-                        ? "border-green-200 bg-green-50/50"
+                        ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30"
                         : "border-border"
                     }`}
                   >
@@ -598,8 +598,8 @@ export default function Home() {
                 <div
                   className={`rounded-md p-3 text-sm ${
                     mensagem.tipo === "sucesso"
-                      ? "border border-green-200 bg-green-50 text-green-800"
-                      : "border border-red-200 bg-red-50 text-red-800"
+                      ? "border border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300"
+                      : "border border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
                   }`}
                 >
                   {mensagem.texto}

@@ -300,8 +300,8 @@ export default function EditarMusicasPage() {
         <div
           className={`mb-6 rounded-md p-3 text-sm ${
             mensagem.tipo === "sucesso"
-              ? "bg-green-50 text-green-800 border border-green-200"
-              : "bg-red-50 text-red-800 border border-red-200"
+              ? "bg-green-50 text-green-800 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800"
+              : "bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800"
           }`}
         >
           {mensagem.texto}
@@ -540,7 +540,7 @@ export default function EditarMusicasPage() {
                     ) : (
                       <div>
                         {removeCifra && (
-                          <div className="mb-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                          <div className="mb-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
                             <span className="flex-1">Cifra será removida ao salvar.</span>
                             <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setRemoveCifra(false)}>Desfazer</Button>
                           </div>
@@ -582,7 +582,7 @@ export default function EditarMusicasPage() {
                     ) : (
                       <div>
                         {removePartitura && (
-                          <div className="mb-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                          <div className="mb-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
                             <span className="flex-1">Partitura será removida ao salvar.</span>
                             <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setRemovePartitura(false)}>Desfazer</Button>
                           </div>
@@ -624,10 +624,10 @@ export default function EditarMusicasPage() {
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                         musica.abrangencia === "todas"
-                          ? "bg-green-50 text-green-700"
+                          ? "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300"
                           : musica.abrangencia === "tempo_liturgico"
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-amber-50 text-amber-700"
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                          : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
                       }`}>
                         {musica.abrangencia === "todas"
                           ? "Todas as missas"
@@ -645,7 +645,7 @@ export default function EditarMusicasPage() {
                           href={musica.cifra_pdf_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50"
                         >
                           <Eye className="h-3 w-3" /> Cifra
                         </a>
@@ -655,7 +655,7 @@ export default function EditarMusicasPage() {
                           href={musica.partitura_pdf_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100"
+                          className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/50"
                         >
                           <Eye className="h-3 w-3" /> Partitura
                         </a>
@@ -665,7 +665,7 @@ export default function EditarMusicasPage() {
                           href={musica.youtube_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                          className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
                         >
                           YouTube
                         </a>

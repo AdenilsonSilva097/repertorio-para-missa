@@ -39,6 +39,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createSupabaseBrowser();
   const router = useRouter();
 
+  async function fetchPerfil(userId: string) {
+    const { data } = await supabase
+      .from("perfis")
+      .select("id, nome, email, role, ativo")
+      .eq("id", userId)
+      .single();
+
+    setPerfil(data as Perfil | null);
+    setLoading(false);
+  }
+
   useEffect(() => {
     // Carrega sessão atual
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -64,18 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function fetchPerfil(userId: string) {
-    const { data } = await supabase
-      .from("perfis")
-      .select("id, nome, email, role, ativo")
-      .eq("id", userId)
-      .single();
-
-    setPerfil(data as Perfil | null);
-    setLoading(false);
-  }
 
   async function signOut() {
     await supabase.auth.signOut();

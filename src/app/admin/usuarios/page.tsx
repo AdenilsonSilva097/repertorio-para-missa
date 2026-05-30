@@ -37,10 +37,6 @@ export default function AdminUsuariosPage() {
     }
   }, [authLoading, isAdmin, router]);
 
-  useEffect(() => {
-    if (isAdmin) fetchUsuarios();
-  }, [isAdmin]);
-
   async function fetchUsuarios() {
     setLoading(true);
     const { data } = await supabase
@@ -51,6 +47,12 @@ export default function AdminUsuariosPage() {
     if (data) setUsuarios(data);
     setLoading(false);
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isAdmin) fetchUsuarios();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   async function handleChangeRole(userId: string, newRole: string) {
     setMensagem(null);

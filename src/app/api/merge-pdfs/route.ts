@@ -132,5 +132,5 @@ export async function POST(request: NextRequest) {
     headers.set("X-Merge-Warnings", JSON.stringify(erros));
   }
 
-  return new NextResponse(mergedBytes, { status: 200, headers });
+  return new NextResponse(Buffer.from(mergedBytes), { status: 200, headers });
 }

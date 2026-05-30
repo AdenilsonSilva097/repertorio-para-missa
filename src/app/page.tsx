@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
-import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,7 +73,6 @@ export default function Home() {
   const [dupRepertorioId, setDupRepertorioId] = useState<string | null>(null);
   const [dupRepertorioNome, setDupRepertorioNome] = useState("");
   const [novoNome, setNovoNome] = useState("");
-  const [pendingPdfAction, setPendingPdfAction] = useState(false);
 
   /* carrega missas */
   useEffect(() => {
@@ -85,28 +83,22 @@ export default function Home() {
       .then(({ data }) => {
         if (data) setMissas(data);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* carrega músicas ao mudar a missa */
-  useEffect(() => {
-    if (!missaId) {
-      setMusicas([]);
-      setSelecionadas(new Set());
-      return;
-    }
-
+  /* carrega músicas de uma missa */
+  async function loadMusicas(id: string) {
     setLoadingMusicas(true);
     setMensagem(null);
 
-    const missaSelecionada = missas.find((m) => m.id === missaId);
+    const missaSelecionada = missas.find((m) => m.id === id);
     const tempoLiturgico = missaSelecionada?.tempo ?? "";
 
-    // Busca músicas: da missa específica + do mesmo tempo litúrgico + universais
-    const promises = [
+    const [r1, r2, r3] = await Promise.all([
       supabase
         .from("musicas")
         .select("id, titulo, autor_letra, autor_melodia, momento, youtube_url, cifra_pdf_url, partitura_pdf_url, abrangencia")
-        .eq("missa_id", missaId)
+        .eq("missa_id", id)
         .eq("abrangencia", "data_especifica"),
       supabase
         .from("musicas")
@@ -117,29 +109,25 @@ export default function Home() {
         .from("musicas")
         .select("id, titulo, autor_letra, autor_melodia, momento, youtube_url, cifra_pdf_url, partitura_pdf_url, abrangencia")
         .eq("abrangencia", "todas"),
-    ];
+    ]);
 
-    Promise.all(promises).then(([r1, r2, r3]) => {
-      setLoadingMusicas(false);
-      if (r1.error || r2.error || r3.error) {
-        setMensagem({ tipo: "erro", texto: r1.error?.message || r2.error?.message || r3.error?.message || "Erro ao carregar músicas." });
-        return;
-      }
-      // Junta e deduplica por id
-      const todas = [...(r1.data ?? []), ...(r2.data ?? []), ...(r3.data ?? [])];
-      const unicas = Array.from(new Map(todas.map((m) => [m.id, m])).values());
-      const sorted = unicas.sort(
-        (a, b) => ORDEM_MOMENTOS.indexOf(a.momento) - ORDEM_MOMENTOS.indexOf(b.momento)
-      );
-      setMusicas(sorted);
-      setSelecionadas(new Set());
-      // Abre o primeiro momento que tem músicas
-      const primeiroMomento = ORDEM_MOMENTOS.find((mom) =>
-        sorted.some((m) => m.momento === mom)
-      );
-      setMomentoAberto(primeiroMomento ?? null);
-    });
-  }, [missaId]);
+    setLoadingMusicas(false);
+    if (r1.error || r2.error || r3.error) {
+      setMensagem({ tipo: "erro", texto: r1.error?.message || r2.error?.message || r3.error?.message || "Erro ao carregar músicas." });
+      return;
+    }
+    const todas = [...(r1.data ?? []), ...(r2.data ?? []), ...(r3.data ?? [])];
+    const unicas = Array.from(new Map(todas.map((m) => [m.id, m])).values());
+    const sorted = unicas.sort(
+      (a, b) => ORDEM_MOMENTOS.indexOf(a.momento) - ORDEM_MOMENTOS.indexOf(b.momento)
+    );
+    setMusicas(sorted);
+    setSelecionadas(new Set());
+    const primeiroMomento = ORDEM_MOMENTOS.find((mom) =>
+      sorted.some((m) => m.momento === mom)
+    );
+    setMomentoAberto(primeiroMomento ?? null);
+  }
 
   /* tempos litúrgicos únicos */
   const tempos = Array.from(new Set(missas.map((m) => m.tempo)));
@@ -384,7 +372,7 @@ export default function Home() {
             value={tempoSelecionado}
             onValueChange={(v) => {
               setTempoSelecionado(v);
-              setMissaId("");
+              setMissaId(""); setMusicas([]); setSelecionadas(new Set());
             }}
           >
             <SelectTrigger>
@@ -402,7 +390,7 @@ export default function Home() {
             <button
               type="button"
               className="text-xs text-muted-foreground hover:text-foreground underline"
-              onClick={() => { setTempoSelecionado(""); setMissaId(""); }}
+              onClick={() => { setTempoSelecionado(""); setMissaId(""); setMusicas([]); setSelecionadas(new Set()); }}
             >
               Limpar filtro
             </button>
@@ -412,7 +400,7 @@ export default function Home() {
         {/* Seletor de Missa */}
         <div className="mt-3 space-y-2">
           <Label>Missa</Label>
-          <Select value={missaId} onValueChange={setMissaId}>
+          <Select value={missaId} onValueChange={(v) => { setMissaId(v); setMusicas([]); setSelecionadas(new Set()); if (v) loadMusicas(v); }}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione a missa..." />
             </SelectTrigger>

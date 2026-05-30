@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Pencil, Trash2, Loader2, Search, Save, X, Eye, FileX, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Pencil, Trash2, Loader2, Search, Save, X, Eye, FileX, SlidersHorizontal } from "lucide-react";
 
 const MOMENTOS_MISSA = [
   "Entrada",
@@ -89,8 +89,6 @@ export default function EditarMusicasPage() {
   const [removePartitura, setRemovePartitura] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
   const cifraInputRef = useRef<HTMLInputElement>(null);
   const partituraInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,10 +100,7 @@ export default function EditarMusicasPage() {
       .then(({ data }) => {
         if (data) setMissas(data);
       });
-  }, []);
-
-  useEffect(() => {
-    fetchMusicas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   }, []);
 
   async function fetchMusicas() {
@@ -119,6 +114,12 @@ export default function EditarMusicasPage() {
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchMusicas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function startEdit(musica: Musica) {
     setEditandoId(musica.id);

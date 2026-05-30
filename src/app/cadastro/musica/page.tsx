@@ -76,7 +76,9 @@ export default function CadastroMusicaPage() {
         setMissas(data);
       }
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMissas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function resetForm() {

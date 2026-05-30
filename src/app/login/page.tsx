@@ -2,7 +2,7 @@
 
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
-import { Music, Chrome } from "lucide-react";
+import { Music } from "lucide-react";
 import { useState } from "react";
 
 export default function LoginPage() {

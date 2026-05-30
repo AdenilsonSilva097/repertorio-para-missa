@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,11 +28,6 @@ export default function RepertoriosSalvosPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [gerandoId, setGerandoId] = useState<string | null>(null);
   const [mensagem, setMensagem] = useState<{ tipo: "sucesso" | "erro"; texto: string } | null>(null);
-  const router = useRouter();
-
-  useEffect(() => {
-    fetchRepertorios();
-  }, []);
 
   async function fetchRepertorios() {
     setLoading(true);
@@ -47,6 +41,12 @@ export default function RepertoriosSalvosPage() {
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchRepertorios();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleDelete(rep: Repertorio) {
     if (!confirm(`Excluir o repertório "${rep.nome}"?`)) return;

@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Music, BookOpen, Pencil, FolderOpen, Shield,
-  Menu, X, LogOut, ChevronDown,
+  Menu, X, LogOut, ChevronDown, Sun, Moon,
 } from "lucide-react";
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { useTheme } from "next-themes";
 
 type NavLink = {
   href: string;
@@ -42,6 +43,11 @@ function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () =
 export function Navbar() {
   const pathname = usePathname();
   const { perfil, signOut, loading } = useAuth();
+  const { theme, setTheme } = useTheme();
+
+  function toggleTheme() {
+    setTheme(theme === "dark" ? "light" : "dark");
+  }
 
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
@@ -201,6 +207,15 @@ export function Navbar() {
                     )}
                     <div className="border-t py-1">
                       <button
+                        onClick={toggleTheme}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Sun className="h-4 w-4 dark:hidden" />
+                        <Moon className="hidden h-4 w-4 dark:block" />
+                        <span className="dark:hidden">Tema escuro</span>
+                        <span className="hidden dark:block">Tema claro</span>
+                      </button>
+                      <button
                         onClick={() => { setUserMenuOpen(false); signOut(); }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                       >
@@ -276,7 +291,16 @@ export function Navbar() {
                   );
                 })}
               </div>
-              <div className="border-t p-3">
+              <div className="border-t p-3 space-y-1">
+                <button
+                  onClick={toggleTheme}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Sun className="h-4 w-4 dark:hidden" />
+                  <Moon className="hidden h-4 w-4 dark:block" />
+                  <span className="dark:hidden">Tema escuro</span>
+                  <span className="hidden dark:block">Tema claro</span>
+                </button>
                 <button
                   onClick={() => { closeMenu(); signOut(); }}
                   className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"

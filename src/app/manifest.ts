@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Repertório para Missa",
-    short_name: "Repertório",
+    short_name: "Repertório para Missa",
     description: "Gerenciador de repertório musical para missas católicas",
     start_url: "/",
     display: "standalone",

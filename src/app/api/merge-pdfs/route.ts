@@ -58,11 +58,12 @@ export async function POST(request: NextRequest) {
 
       const [A4_WIDTH, A4_HEIGHT] = PageSizes.A4;
 
+      const sourcePages = sourcePdf.getPages();
       const pageIndices = sourcePdf.getPageIndices();
 
       for (const idx of pageIndices) {
         try {
-          const [embeddedPage] = await mergedPdf.embedPages(sourcePdf, [idx]);
+          const [embeddedPage] = await mergedPdf.embedPages([sourcePages[idx]]);
           const { width: srcW, height: srcH } = embeddedPage.size();
 
           const newPage = mergedPdf.addPage([A4_WIDTH, A4_HEIGHT]);

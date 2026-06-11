@@ -240,4 +240,15 @@ Considere ao mexer nestas áreas:
 
 ---
 
+## 11. Melhorias Futuras (planejadas, ainda não implementadas)
+
+### Auth inicial via SSR (eliminar o "flash" da navbar)
+**Problema:** o estado de auth (usuário + `role`) é resolvido só no cliente, após a hidratação, via `fetchPerfil` (rede). Por isso a navbar — que depende do papel — só aparece depois desse round-trip em loads completos (F5), causando pop-in dos links por papel e layout shift.
+
+**Mitigação atual (implementada):** a navbar não esconde mais a barra inteira durante `loading`; renderiza a casca (`h-14` reservada) com os links base (leitor) e um avatar placeholder, e os links de editor/admin preenchem quando o perfil carrega. Resolve o sumiço da barra e o layout shift; resta apenas os links por papel surgindo um instante depois, só no F5.
+
+**Solução definitiva (opção 4, não implementada):** buscar sessão + perfil **no servidor** (o `layout.tsx` já é Server Component; `createSupabaseServer()` e os cookies SSR já existem) e injetar `initialUser`/`initialPerfil` como props no `AuthProvider`, que passa a iniciar com `loading=false`. A navbar sai correta (inclusive editor/admin) no primeiro HTML, sem gate, sem flash e com hidratação consistente. Arquivos afetados: `layout.tsx` (async + fetch), `auth-provider.tsx` (props iniciais + guard no `onAuthStateChange` para evitar refetch), `navbar.tsx` (remover o resíduo de `loading`). Trade-off: latência migra para o TTFB (cacheável por request) e exige cuidado com hydration mismatch. Vale a pena fazer junto com qualquer outra migração de auth para SSR.
+
+---
+
 _Ao concluir uma alteração: rode `yarn lint` e valide manualmente com `yarn dev`. Mudanças de schema vão para uma nova migração em `supabase/migrations/` (numeração sequencial) e exigem ajuste das policies RLS quando envolvem novas operações de dados._

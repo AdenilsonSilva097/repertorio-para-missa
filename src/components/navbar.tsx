@@ -91,7 +91,13 @@ export function Navbar() {
   const musicasActive = musicasLinks.some((l) => pathname === l.href);
   const userInitial = (perfil?.nome?.[0] ?? perfil?.email?.[0] ?? "U").toUpperCase();
 
-  if (pathname === "/login" || loading) return null;
+  // Esconde a navbar apenas na tela de login. Durante o carregamento do
+  // perfil NÃO escondemos a barra inteira (isso causava o "pop-in" e o
+  // layout shift): renderizamos a casca imediatamente (altura h-14 reservada)
+  // com os links base (leitor); os links por papel (editor/admin) e o avatar
+  // aparecem quando o perfil termina de carregar. Ver "Melhorias futuras" no
+  // CLAUDE.md para a solução definitiva (auth via SSR).
+  if (pathname === "/login") return null;
 
   return (
     <>
@@ -172,9 +178,13 @@ export function Navbar() {
                   className="inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                   title={perfil?.email ?? "Menu do usuário"}
                 >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                    {userInitial}
-                  </span>
+                  {loading ? (
+                    <span className="h-7 w-7 rounded-full bg-muted animate-pulse" />
+                  ) : (
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                      {userInitial}
+                    </span>
+                  )}
                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${userMenuOpen ? "rotate-180" : ""}`} />
                 </button>
                 {userMenuOpen && (

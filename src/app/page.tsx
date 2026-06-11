@@ -238,52 +238,21 @@ export default function Home() {
     try {
       const musicaIds = Array.from(selecionadas);
 
-      if (repertorioIdExistente) {
-        // Atualiza o existente: atualiza campos e substitui músicas
-        await supabase
-          .from("repertorios")
-          .update({ nome, tipo_exportacao: tipoExportacao, updated_at: new Date().toISOString() })
-          .eq("id", repertorioIdExistente);
+      // Salva de forma atômica via RPC (transação no Postgres): criação ou
+      // atualização + substituição das músicas em um único passo. Evita
+      // estados inconsistentes em caso de falha parcial.
+      const { error } = await supabase.rpc("salvar_repertorio", {
+        p_repertorio_id: repertorioIdExistente,
+        p_nome: nome,
+        p_missa_id: missaId,
+        p_tipo_exportacao: tipoExportacao,
+        p_musica_ids: musicaIds,
+      });
 
-        await supabase
-          .from("repertorio_musicas")
-          .delete()
-          .eq("repertorio_id", repertorioIdExistente);
-
-        if (musicaIds.length > 0) {
-          await supabase.from("repertorio_musicas").insert(
-            musicaIds.map((musica_id) => ({
-              repertorio_id: repertorioIdExistente,
-              musica_id,
-            }))
-          );
-        }
-      } else {
-        // Cria novo
-        const { data: novo, error } = await supabase
-          .from("repertorios")
-          .insert({
-            nome,
-            missa_id: missaId,
-            tipo_exportacao: tipoExportacao,
-          })
-          .select("id")
-          .single();
-
-        if (error || !novo) {
-          setMensagem({ tipo: "erro", texto: `Erro ao salvar repertório: ${error?.message}` });
-          setGerando(false);
-          return;
-        }
-
-        if (musicaIds.length > 0) {
-          await supabase.from("repertorio_musicas").insert(
-            musicaIds.map((musica_id) => ({
-              repertorio_id: novo.id,
-              musica_id,
-            }))
-          );
-        }
+      if (error) {
+        setMensagem({ tipo: "erro", texto: `Erro ao salvar repertório: ${error.message}` });
+        setGerando(false);
+        return;
       }
 
       await gerarEBaixarPdf();

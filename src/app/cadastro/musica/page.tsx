@@ -51,7 +51,9 @@ export default function CadastroMusicaPage() {
         .select("id, nome, tempo")
         .order("ordem", { ascending: true });
 
-      if (!error && data) {
+      if (error) {
+        setMensagem({ tipo: "erro", texto: `Erro ao carregar missas: ${error.message}` });
+      } else if (data) {
         setMissas(data);
       }
     }

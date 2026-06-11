@@ -76,7 +76,11 @@ export default function EditarMusicasPage() {
       .from("missas")
       .select("id, nome, tempo")
       .order("ordem", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          setMensagem({ tipo: "erro", texto: `Erro ao carregar missas: ${error.message}` });
+          return;
+        }
         if (data) setMissas(data);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
@@ -88,7 +92,9 @@ export default function EditarMusicasPage() {
       .from("musicas")
       .select("id, titulo, autor_letra, autor_melodia, momento, youtube_url, cifra_pdf_url, partitura_pdf_url, missa_id, abrangencia, tempo_liturgico, missas(nome, tempo)")
       .order("titulo", { ascending: true });
-    if (!error && data) {
+    if (error) {
+      setMensagem({ tipo: "erro", texto: `Erro ao carregar músicas: ${error.message}` });
+    } else if (data) {
       setMusicas(data as unknown as Musica[]);
     }
     setLoading(false);

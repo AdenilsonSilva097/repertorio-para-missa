@@ -67,7 +67,11 @@ export default function Home() {
       .from("missas")
       .select("id, nome, tempo")
       .order("ordem", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          setMensagem({ tipo: "erro", texto: `Erro ao carregar missas: ${error.message}` });
+          return;
+        }
         if (data) setMissas(data);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,10 +199,15 @@ export default function Home() {
     }
 
     // Verifica se já existe repertório para esta missa
-    const { data: existentes } = await supabase
+    const { data: existentes, error: errExistentes } = await supabase
       .from("repertorios")
       .select("id, nome")
       .eq("missa_id", missaId);
+
+    if (errExistentes) {
+      setMensagem({ tipo: "erro", texto: `Erro ao verificar repertórios: ${errExistentes.message}` });
+      return;
+    }
 
     if (existentes && existentes.length > 0) {
       // Já existe — abre modal perguntando

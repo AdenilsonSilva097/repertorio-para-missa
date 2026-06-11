@@ -6,6 +6,18 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
 
+  // Atrás de um proxy (Vercel/Netlify/etc.) o `origin` derivado de
+  // `request.url` pode vir com protocolo rebaixado (http) ou host interno.
+  // Reconstruímos a URL pública a partir dos headers encaminhados para
+  // evitar redirecionar o navegador para um destino inacessível (ERR_FAILED).
+  const isLocalEnv = process.env.NODE_ENV === "development";
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const baseUrl =
+    !isLocalEnv && forwardedHost
+      ? `${forwardedProto ?? "https"}://${forwardedHost}`
+      : origin;
+
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -27,9 +39,9 @@ export async function GET(request: Request) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(origin);
+      return NextResponse.redirect(baseUrl);
     }
   }
 
-  return NextResponse.redirect(`${origin}/login`);
+  return NextResponse.redirect(`${baseUrl}/login`);
 }

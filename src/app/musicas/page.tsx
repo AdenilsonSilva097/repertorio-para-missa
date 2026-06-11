@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Pencil, Trash2, Loader2, Search, Save, X, Eye, FileX, SlidersHorizontal } from "lucide-react";
 import { MOMENTOS_MISSA, TEMPOS_LITURGICOS } from "@/lib/constants";
+import { removeStorageFileByUrl } from "@/lib/storage";
 
 type Missa = {
   id: string;
@@ -165,6 +166,10 @@ export default function EditarMusicasPage() {
       };
 
       const timestamp = Date.now();
+      const atual = musicas.find((m) => m.id === musicaId);
+      // PDFs antigos que serão substituídos/removidos (apagar após salvar).
+      const cifraOrfa = removeCifra || editCifraFile ? atual?.cifra_pdf_url ?? null : null;
+      const partituraOrfa = removePartitura || editPartituraFile ? atual?.partitura_pdf_url ?? null : null;
 
       if (removeCifra) {
         updates.cifra_pdf_url = null;
@@ -197,6 +202,13 @@ export default function EditarMusicasPage() {
       if (error) {
         setMensagem({ tipo: "erro", texto: `Erro ao salvar: ${error.message}` });
       } else {
+        // Update OK: remove os PDFs antigos que ficaram órfãos (best-effort).
+        if (cifraOrfa && cifraOrfa !== updates.cifra_pdf_url) {
+          await removeStorageFileByUrl(supabase, cifraOrfa, "cifras");
+        }
+        if (partituraOrfa && partituraOrfa !== updates.partitura_pdf_url) {
+          await removeStorageFileByUrl(supabase, partituraOrfa, "partituras");
+        }
         setMensagem({ tipo: "sucesso", texto: "Música atualizada com sucesso!" });
         setEditandoId(null);
         fetchMusicas();
@@ -219,6 +231,9 @@ export default function EditarMusicasPage() {
     if (error) {
       setMensagem({ tipo: "erro", texto: `Erro ao excluir: ${error.message}` });
     } else {
+      // Exclusão OK: remove os PDFs associados do Storage (best-effort).
+      await removeStorageFileByUrl(supabase, musica.cifra_pdf_url, "cifras");
+      await removeStorageFileByUrl(supabase, musica.partitura_pdf_url, "partituras");
       setMensagem({ tipo: "sucesso", texto: `"${musica.titulo}" excluída com sucesso.` });
       fetchMusicas();
     }

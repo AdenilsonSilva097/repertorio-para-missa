@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Music, Upload, Loader2 } from "lucide-react";
 import { MOMENTOS_MISSA, TEMPOS_LITURGICOS } from "@/lib/constants";
+import { removeStorageFileByUrl } from "@/lib/storage";
 
 type Missa = {
   id: string;
@@ -150,6 +151,9 @@ export default function CadastroMusicaPage() {
       });
 
       if (error) {
+        // Insert falhou: remove os PDFs recém-enviados para não deixar órfãos.
+        await removeStorageFileByUrl(supabase, cifraUrl, "cifras");
+        await removeStorageFileByUrl(supabase, partituraUrl, "partituras");
         setMensagem({ tipo: "erro", texto: `Erro ao salvar: ${error.message}` });
       } else {
         setMensagem({ tipo: "sucesso", texto: "Música cadastrada com sucesso!" });

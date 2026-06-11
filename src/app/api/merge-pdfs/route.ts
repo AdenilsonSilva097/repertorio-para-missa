@@ -1,7 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, PageSizes } from "pdf-lib";
+import { createSupabaseServer } from "@/lib/supabase-server";
+
+// Host permitido para download (Storage público do Supabase). Evita SSRF:
+// a rota só baixa PDFs do próprio projeto, nunca de hosts arbitrários.
+const SUPABASE_HOST = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).host;
+  } catch {
+    return "";
+  }
+})();
 
 export async function POST(request: NextRequest) {
+  // 1. Exige sessão autenticada — a rota fica fora do middleware (matcher
+  //    exclui `api/`), então a checagem precisa ser feita aqui.
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: "Não autenticado." },
+      { status: 401 }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -30,11 +55,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Valida que todas as entradas são strings com protocolo HTTP(S)
+  // Valida que todas as entradas são strings HTTPS e que apontam para o
+  // Storage do Supabase deste projeto (allowlist anti-SSRF).
   for (const url of urls) {
-    if (typeof url !== "string" || !/^https?:\/\/.+/i.test(url)) {
+    if (typeof url !== "string") {
       return NextResponse.json(
         { error: `URL inválida: ${String(url)}` },
+        { status: 400 }
+      );
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return NextResponse.json(
+        { error: `URL inválida: ${url}` },
+        { status: 400 }
+      );
+    }
+
+    if (parsed.protocol !== "https:" || parsed.host !== SUPABASE_HOST) {
+      return NextResponse.json(
+        { error: `URL não permitida: ${url}` },
         { status: 400 }
       );
     }

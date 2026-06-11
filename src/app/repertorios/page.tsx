@@ -36,7 +36,9 @@ export default function RepertoriosSalvosPage() {
       .select("id, nome, tipo_exportacao, created_at, updated_at, missas(id, nome, tempo), repertorio_musicas(musica_id)")
       .order("updated_at", { ascending: false });
 
-    if (!error && data) {
+    if (error) {
+      setMensagem({ tipo: "erro", texto: `Erro ao carregar repertórios: ${error.message}` });
+    } else if (data) {
       setRepertorios(data as unknown as Repertorio[]);
     }
     setLoading(false);

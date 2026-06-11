@@ -1,4 +1,4 @@
-const CACHE_NAME = "repertorio-missa-v1";
+const CACHE_NAME = "repertorio-missa-v2";
 const STATIC_ASSETS = ["/", "/login"];
 
 self.addEventListener("install", (event) => {
@@ -35,7 +35,29 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Stale-while-revalidate for pages and assets
+  // Navegações (HTML): network-first. Garante que o usuário online sempre
+  // receba a versão mais recente após um deploy (evita servir um shell antigo
+  // que referencia chunks já removidos). Cai para o cache apenas offline.
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          return (await cache.match(request)) || (await cache.match("/"));
+        })
+    );
+    return;
+  }
+
+  // Demais GET (assets estáticos do Next, com hash imutável no nome):
+  // stale-while-revalidate.
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const cachedResponse = await cache.match(request);

@@ -39,12 +39,16 @@ export default function AdminUsuariosPage() {
 
   async function fetchUsuarios() {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("perfis")
       .select("id, nome, email, role, ativo, created_at")
       .order("created_at", { ascending: true });
 
-    if (data) setUsuarios(data);
+    if (error) {
+      setMensagem({ tipo: "erro", texto: `Erro ao carregar usuários: ${error.message}` });
+    } else if (data) {
+      setUsuarios(data);
+    }
     setLoading(false);
   }
 

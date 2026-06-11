@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Circle,
 } from "lucide-react";
+import { ORDEM_MOMENTOS } from "@/lib/constants";
 
 /* ---------- tipos ---------- */
 type Missa = { id: string; nome: string; tempo: string };
@@ -39,20 +40,6 @@ type Musica = {
   partitura_pdf_url: string | null;
   abrangencia: "todas" | "tempo_liturgico" | "data_especifica";
 };
-
-const ORDEM_MOMENTOS = [
-  "Entrada",
-  "Ato Penitencial",
-  "Glória",
-  "Salmo",
-  "Aclamação",
-  "Ofertório",
-  "Santo",
-  "Cordeiro",
-  "Comunhão",
-  "Ação de Graças",
-  "Final",
-];
 
 /* ---------- componente ---------- */
 export default function Home() {
@@ -80,7 +67,11 @@ export default function Home() {
       .from("missas")
       .select("id, nome, tempo")
       .order("ordem", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          setMensagem({ tipo: "erro", texto: `Erro ao carregar missas: ${error.message}` });
+          return;
+        }
         if (data) setMissas(data);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,10 +199,15 @@ export default function Home() {
     }
 
     // Verifica se já existe repertório para esta missa
-    const { data: existentes } = await supabase
+    const { data: existentes, error: errExistentes } = await supabase
       .from("repertorios")
       .select("id, nome")
       .eq("missa_id", missaId);
+
+    if (errExistentes) {
+      setMensagem({ tipo: "erro", texto: `Erro ao verificar repertórios: ${errExistentes.message}` });
+      return;
+    }
 
     if (existentes && existentes.length > 0) {
       // Já existe — abre modal perguntando
@@ -251,52 +247,21 @@ export default function Home() {
     try {
       const musicaIds = Array.from(selecionadas);
 
-      if (repertorioIdExistente) {
-        // Atualiza o existente: atualiza campos e substitui músicas
-        await supabase
-          .from("repertorios")
-          .update({ nome, tipo_exportacao: tipoExportacao, updated_at: new Date().toISOString() })
-          .eq("id", repertorioIdExistente);
+      // Salva de forma atômica via RPC (transação no Postgres): criação ou
+      // atualização + substituição das músicas em um único passo. Evita
+      // estados inconsistentes em caso de falha parcial.
+      const { error } = await supabase.rpc("salvar_repertorio", {
+        p_repertorio_id: repertorioIdExistente,
+        p_nome: nome,
+        p_missa_id: missaId,
+        p_tipo_exportacao: tipoExportacao,
+        p_musica_ids: musicaIds,
+      });
 
-        await supabase
-          .from("repertorio_musicas")
-          .delete()
-          .eq("repertorio_id", repertorioIdExistente);
-
-        if (musicaIds.length > 0) {
-          await supabase.from("repertorio_musicas").insert(
-            musicaIds.map((musica_id) => ({
-              repertorio_id: repertorioIdExistente,
-              musica_id,
-            }))
-          );
-        }
-      } else {
-        // Cria novo
-        const { data: novo, error } = await supabase
-          .from("repertorios")
-          .insert({
-            nome,
-            missa_id: missaId,
-            tipo_exportacao: tipoExportacao,
-          })
-          .select("id")
-          .single();
-
-        if (error || !novo) {
-          setMensagem({ tipo: "erro", texto: `Erro ao salvar repertório: ${error?.message}` });
-          setGerando(false);
-          return;
-        }
-
-        if (musicaIds.length > 0) {
-          await supabase.from("repertorio_musicas").insert(
-            musicaIds.map((musica_id) => ({
-              repertorio_id: novo.id,
-              musica_id,
-            }))
-          );
-        }
+      if (error) {
+        setMensagem({ tipo: "erro", texto: `Erro ao salvar repertório: ${error.message}` });
+        setGerando(false);
+        return;
       }
 
       await gerarEBaixarPdf();

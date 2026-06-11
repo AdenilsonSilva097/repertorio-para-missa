@@ -14,28 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Pencil, Trash2, Loader2, Search, Save, X, Eye, FileX, SlidersHorizontal } from "lucide-react";
-
-const MOMENTOS_MISSA = [
-  "Entrada",
-  "Ato Penitencial",
-  "Glória",
-  "Salmo",
-  "Aclamação",
-  "Ofertório",
-  "Santo",
-  "Cordeiro",
-  "Comunhão",
-  "Ação de Graças",
-  "Final",
-] as const;
-
-const TEMPOS_LITURGICOS = [
-  "Tempo do Natal",
-  "Tempo Comum",
-  "Quaresma",
-  "Páscoa",
-  "Advento",
-] as const;
+import { MOMENTOS_MISSA, TEMPOS_LITURGICOS } from "@/lib/constants";
+import { removeStorageFileByUrl } from "@/lib/storage";
 
 type Missa = {
   id: string;
@@ -97,7 +77,11 @@ export default function EditarMusicasPage() {
       .from("missas")
       .select("id, nome, tempo")
       .order("ordem", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          setMensagem({ tipo: "erro", texto: `Erro ao carregar missas: ${error.message}` });
+          return;
+        }
         if (data) setMissas(data);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
@@ -109,7 +93,9 @@ export default function EditarMusicasPage() {
       .from("musicas")
       .select("id, titulo, autor_letra, autor_melodia, momento, youtube_url, cifra_pdf_url, partitura_pdf_url, missa_id, abrangencia, tempo_liturgico, missas(nome, tempo)")
       .order("titulo", { ascending: true });
-    if (!error && data) {
+    if (error) {
+      setMensagem({ tipo: "erro", texto: `Erro ao carregar músicas: ${error.message}` });
+    } else if (data) {
       setMusicas(data as unknown as Musica[]);
     }
     setLoading(false);
@@ -180,6 +166,10 @@ export default function EditarMusicasPage() {
       };
 
       const timestamp = Date.now();
+      const atual = musicas.find((m) => m.id === musicaId);
+      // PDFs antigos que serão substituídos/removidos (apagar após salvar).
+      const cifraOrfa = removeCifra || editCifraFile ? atual?.cifra_pdf_url ?? null : null;
+      const partituraOrfa = removePartitura || editPartituraFile ? atual?.partitura_pdf_url ?? null : null;
 
       if (removeCifra) {
         updates.cifra_pdf_url = null;
@@ -212,6 +202,13 @@ export default function EditarMusicasPage() {
       if (error) {
         setMensagem({ tipo: "erro", texto: `Erro ao salvar: ${error.message}` });
       } else {
+        // Update OK: remove os PDFs antigos que ficaram órfãos (best-effort).
+        if (cifraOrfa && cifraOrfa !== updates.cifra_pdf_url) {
+          await removeStorageFileByUrl(supabase, cifraOrfa, "cifras");
+        }
+        if (partituraOrfa && partituraOrfa !== updates.partitura_pdf_url) {
+          await removeStorageFileByUrl(supabase, partituraOrfa, "partituras");
+        }
         setMensagem({ tipo: "sucesso", texto: "Música atualizada com sucesso!" });
         setEditandoId(null);
         fetchMusicas();
@@ -234,6 +231,9 @@ export default function EditarMusicasPage() {
     if (error) {
       setMensagem({ tipo: "erro", texto: `Erro ao excluir: ${error.message}` });
     } else {
+      // Exclusão OK: remove os PDFs associados do Storage (best-effort).
+      await removeStorageFileByUrl(supabase, musica.cifra_pdf_url, "cifras");
+      await removeStorageFileByUrl(supabase, musica.partitura_pdf_url, "partituras");
       setMensagem({ tipo: "sucesso", texto: `"${musica.titulo}" excluída com sucesso.` });
       fetchMusicas();
     }

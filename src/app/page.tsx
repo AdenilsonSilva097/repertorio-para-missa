@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Circle,
 } from "lucide-react";
+import { ORDEM_MOMENTOS } from "@/lib/constants";
 
 /* ---------- tipos ---------- */
 type Missa = { id: string; nome: string; tempo: string };
@@ -39,20 +40,6 @@ type Musica = {
   partitura_pdf_url: string | null;
   abrangencia: "todas" | "tempo_liturgico" | "data_especifica";
 };
-
-const ORDEM_MOMENTOS = [
-  "Entrada",
-  "Ato Penitencial",
-  "Glória",
-  "Salmo",
-  "Aclamação",
-  "Ofertório",
-  "Santo",
-  "Cordeiro",
-  "Comunhão",
-  "Ação de Graças",
-  "Final",
-];
 
 /* ---------- componente ---------- */
 export default function Home() {

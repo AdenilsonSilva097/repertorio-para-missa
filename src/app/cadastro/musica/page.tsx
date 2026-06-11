@@ -14,28 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Music, Upload, Loader2 } from "lucide-react";
-
-const MOMENTOS_MISSA = [
-  "Entrada",
-  "Ato Penitencial",
-  "Glória",
-  "Salmo",
-  "Aclamação",
-  "Ofertório",
-  "Santo",
-  "Cordeiro",
-  "Comunhão",
-  "Ação de Graças",
-  "Final",
-] as const;
-
-const TEMPOS_LITURGICOS = [
-  "Tempo do Natal",
-  "Tempo Comum",
-  "Quaresma",
-  "Páscoa",
-  "Advento",
-] as const;
+import { MOMENTOS_MISSA, TEMPOS_LITURGICOS } from "@/lib/constants";
 
 type Missa = {
   id: string;

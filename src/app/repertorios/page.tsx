@@ -10,6 +10,8 @@ import {
   FileDown,
   Calendar,
 } from "lucide-react";
+import { ORDEM_MOMENTOS } from "@/lib/constants";
+import { gerarPdfMesclado, type MergeProgresso } from "@/lib/merge-pdfs-client";
 
 type Repertorio = {
   id: string;
@@ -18,7 +20,7 @@ type Repertorio = {
   created_at: string;
   updated_at: string;
   missas: { id: string; nome: string; tempo: string } | null;
-  repertorio_musicas: { musica_id: string }[];
+  repertorio_musicas: { musica_id: string; tipo_exportacao: string }[];
 };
 
 export default function RepertoriosSalvosPage() {
@@ -27,13 +29,14 @@ export default function RepertoriosSalvosPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [gerandoId, setGerandoId] = useState<string | null>(null);
+  const [progresso, setProgresso] = useState<MergeProgresso | null>(null);
   const [mensagem, setMensagem] = useState<{ tipo: "sucesso" | "erro"; texto: string } | null>(null);
 
   async function fetchRepertorios() {
     setLoading(true);
     const { data, error } = await supabase
       .from("repertorios")
-      .select("id, nome, tipo_exportacao, created_at, updated_at, missas(id, nome, tempo), repertorio_musicas(musica_id)")
+      .select("id, nome, tipo_exportacao, created_at, updated_at, missas(id, nome, tempo), repertorio_musicas(musica_id, tipo_exportacao)")
       .order("updated_at", { ascending: false });
 
     if (error) {
@@ -80,40 +83,38 @@ export default function RepertoriosSalvosPage() {
         return;
       }
 
-      const campo = rep.tipo_exportacao === "partitura" ? "partitura_pdf_url" : "cifra_pdf_url";
+      // Formato (cifra/partitura) salvo por música.
+      const tipoPorMusica = new Map(
+        rep.repertorio_musicas.map((rm) => [rm.musica_id, rm.tipo_exportacao])
+      );
 
       const { data: musicas } = await supabase
         .from("musicas")
-        .select(`id, ${campo}`)
+        .select("id, momento, cifra_pdf_url, partitura_pdf_url")
         .in("id", musicaIds);
 
+      // Ordena por momento (a ordem do `.in` é indeterminada) e escolhe a URL
+      // conforme o formato salvo para cada música.
       const urls = (musicas ?? [])
-        .map((m: Record<string, string | null>) => m[campo])
+        .slice()
+        .sort((a, b) => ORDEM_MOMENTOS.indexOf(a.momento) - ORDEM_MOMENTOS.indexOf(b.momento))
+        .map((m) =>
+          tipoPorMusica.get(m.id) === "partitura" ? m.partitura_pdf_url : m.cifra_pdf_url
+        )
         .filter(Boolean) as string[];
 
       if (urls.length === 0) {
         setMensagem({
           tipo: "erro",
-          texto: `Nenhuma música possui PDF de ${rep.tipo_exportacao === "partitura" ? "partitura" : "cifra"}.`,
+          texto: "Nenhuma música possui PDF no formato salvo.",
         });
         setGerandoId(null);
         return;
       }
 
-      const res = await fetch("/api/merge-pdfs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls }),
-      });
+      setProgresso(null);
+      const { blob } = await gerarPdfMesclado(urls, setProgresso);
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        setMensagem({ tipo: "erro", texto: err?.error ?? `Erro HTTP ${res.status}` });
-        setGerandoId(null);
-        return;
-      }
-
-      const blob = await res.blob();
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -124,11 +125,24 @@ export default function RepertoriosSalvosPage() {
       URL.revokeObjectURL(downloadUrl);
 
       setMensagem({ tipo: "sucesso", texto: "PDF gerado com sucesso!" });
-    } catch {
-      setMensagem({ tipo: "erro", texto: "Erro ao gerar PDF." });
+    } catch (err) {
+      setMensagem({
+        tipo: "erro",
+        texto: err instanceof Error ? err.message : "Erro ao gerar PDF.",
+      });
     } finally {
       setGerandoId(null);
+      setProgresso(null);
     }
+  }
+
+  // Rótulo do formato: "Misto" quando as músicas têm formatos diferentes;
+  // senão o formato único (com fallback ao padrão do repertório).
+  function rotuloFormato(rep: Repertorio): string {
+    const tipos = new Set(rep.repertorio_musicas.map((rm) => rm.tipo_exportacao));
+    if (tipos.size > 1) return "Misto";
+    const unico = tipos.values().next().value ?? rep.tipo_exportacao;
+    return unico === "partitura" ? "Partituras" : "Cifras";
   }
 
   return (
@@ -181,7 +195,7 @@ export default function RepertoriosSalvosPage() {
                       {rep.repertorio_musicas.length} música{rep.repertorio_musicas.length !== 1 ? "s" : ""}
                     </span>
                     <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                      {rep.tipo_exportacao === "partitura" ? "Partituras" : "Cifras"}
+                      {rotuloFormato(rep)}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-0.5 text-xs text-muted-foreground">
                       <Calendar className="h-3 w-3" />
@@ -198,7 +212,16 @@ export default function RepertoriosSalvosPage() {
                     title="Gerar PDF"
                   >
                     {gerandoId === rep.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {progresso && (
+                          <span className="text-xs tabular-nums">
+                            {progresso.fase === "download"
+                              ? `${progresso.baixados}/${progresso.total}`
+                              : "..."}
+                          </span>
+                        )}
+                      </>
                     ) : (
                       <FileDown className="h-4 w-4" />
                     )}

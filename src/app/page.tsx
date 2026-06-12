@@ -23,8 +23,11 @@ import {
   Check,
   ChevronDown,
   Circle,
+  SlidersHorizontal,
 } from "lucide-react";
 import { ORDEM_MOMENTOS } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import { gerarPdfMesclado, type MergeProgresso } from "@/lib/merge-pdfs-client";
 
 /* ---------- tipos ---------- */
 type Missa = { id: string; nome: string; tempo: string };
@@ -50,8 +53,12 @@ export default function Home() {
   const [musicas, setMusicas] = useState<Musica[]>([]);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [tipoExportacao, setTipoExportacao] = useState<"cifra" | "partitura">("cifra");
+  // Override de formato por música (apenas quando difere do padrão global acima).
+  const [tipoPorMusica, setTipoPorMusica] = useState<Record<string, "cifra" | "partitura">>({});
+  const [personalizarAberto, setPersonalizarAberto] = useState(false);
   const [loadingMusicas, setLoadingMusicas] = useState(false);
   const [gerando, setGerando] = useState(false);
+  const [progresso, setProgresso] = useState<MergeProgresso | null>(null);
   const [mensagem, setMensagem] = useState<{ tipo: "erro" | "sucesso"; texto: string } | null>(null);
   const [momentoAberto, setMomentoAberto] = useState<string | null>(null);
 
@@ -114,6 +121,8 @@ export default function Home() {
     );
     setMusicas(sorted);
     setSelecionadas(new Set());
+    setTipoPorMusica({});
+    setPersonalizarAberto(false);
     const primeiroMomento = ORDEM_MOMENTOS.find((mom) =>
       sorted.some((m) => m.momento === mom)
     );
@@ -174,6 +183,38 @@ export default function Home() {
     return items.filter((m) => selecionadas.has(m.id));
   }
 
+  /* URL do PDF de uma música para um formato (cifra/partitura) */
+  function urlDoFormato(m: Musica, tipo: "cifra" | "partitura"): string | null {
+    return tipo === "cifra" ? m.cifra_pdf_url : m.partitura_pdf_url;
+  }
+
+  /* formato padrão de uma música (sem override): padrão global →
+     fallback ao formato disponível (evita exclusão silenciosa) */
+  function tipoPadrao(m: Musica): "cifra" | "partitura" {
+    if (tipoExportacao === "cifra") {
+      return m.cifra_pdf_url ? "cifra" : m.partitura_pdf_url ? "partitura" : "cifra";
+    }
+    return m.partitura_pdf_url ? "partitura" : m.cifra_pdf_url ? "cifra" : "partitura";
+  }
+
+  /* formato efetivo: override explícito quando houver, senão o padrão */
+  function tipoEfetivo(m: Musica): "cifra" | "partitura" {
+    return tipoPorMusica[m.id] ?? tipoPadrao(m);
+  }
+
+  /* coleta as URLs na ordem dos momentos; separa títulos sem PDF disponível */
+  function coletarUrls(): { urls: string[]; ignoradas: string[] } {
+    const urls: string[] = [];
+    const ignoradas: string[] = [];
+    for (const m of musicas) {
+      if (!selecionadas.has(m.id)) continue;
+      const url = urlDoFormato(m, tipoEfetivo(m));
+      if (url) urls.push(url);
+      else ignoradas.push(m.titulo);
+    }
+    return { urls, ignoradas };
+  }
+
   /* progresso */
   const momentosComMusicas = ORDEM_MOMENTOS.filter((mom) => musicasPorMomento[mom]);
   const momentosPreenchidos = momentosComMusicas.filter(
@@ -184,16 +225,12 @@ export default function Home() {
   async function handleGerarPdf() {
     setMensagem(null);
 
-    const campo = tipoExportacao === "cifra" ? "cifra_pdf_url" : "partitura_pdf_url";
-
-    const urls = musicas
-      .filter((m) => selecionadas.has(m.id) && m[campo])
-      .map((m) => m[campo] as string);
+    const { urls } = coletarUrls();
 
     if (urls.length === 0) {
       setMensagem({
         tipo: "erro",
-        texto: `Nenhuma música selecionada possui PDF de ${tipoExportacao === "cifra" ? "cifra" : "partitura"}.`,
+        texto: "Nenhuma música selecionada possui PDF no formato escolhido.",
       });
       return;
     }
@@ -237,7 +274,10 @@ export default function Home() {
 
   async function handleDupApenasGerar() {
     setShowDupModal(false);
-    await gerarEBaixarPdf();
+    const r = await gerarEBaixarPdf();
+    if (r.ok && r.ignoradas.length) {
+      setMensagem({ tipo: "sucesso", texto: `PDF gerado. Sem PDF, ignoradas: ${r.ignoradas.join(", ")}.` });
+    }
   }
 
   async function salvarRepertorioEGerarPdf(nome: string, repertorioIdExistente: string | null) {
@@ -245,7 +285,11 @@ export default function Home() {
     setMensagem(null);
 
     try {
-      const musicaIds = Array.from(selecionadas);
+      // Músicas com o formato (cifra/partitura) efetivo de cada uma, em ordem
+      // de momento. supabase-js serializa o array de objetos como jsonb.
+      const p_musicas = musicas
+        .filter((m) => selecionadas.has(m.id))
+        .map((m) => ({ id: m.id, tipo: tipoEfetivo(m) }));
 
       // Salva de forma atômica via RPC (transação no Postgres): criação ou
       // atualização + substituição das músicas em um único passo. Evita
@@ -255,7 +299,7 @@ export default function Home() {
         p_nome: nome,
         p_missa_id: missaId,
         p_tipo_exportacao: tipoExportacao,
-        p_musica_ids: musicaIds,
+        p_musicas,
       });
 
       if (error) {
@@ -264,8 +308,15 @@ export default function Home() {
         return;
       }
 
-      await gerarEBaixarPdf();
-      setMensagem({ tipo: "sucesso", texto: "PDF gerado e repertório salvo com sucesso!" });
+      const r = await gerarEBaixarPdf();
+      if (r.ok) {
+        setMensagem({
+          tipo: "sucesso",
+          texto: r.ignoradas.length
+            ? `PDF gerado e repertório salvo. Sem PDF, ignoradas: ${r.ignoradas.join(", ")}.`
+            : "PDF gerado e repertório salvo com sucesso!",
+        });
+      }
     } catch {
       setMensagem({ tipo: "erro", texto: "Erro ao salvar repertório. Tente novamente." });
     } finally {
@@ -273,33 +324,32 @@ export default function Home() {
     }
   }
 
-  async function gerarEBaixarPdf() {
-    const campo = tipoExportacao === "cifra" ? "cifra_pdf_url" : "partitura_pdf_url";
-    const urls = musicas
-      .filter((m) => selecionadas.has(m.id) && m[campo])
-      .map((m) => m[campo] as string);
+  async function gerarEBaixarPdf(): Promise<{ ok: boolean; ignoradas: string[] }> {
+    const { urls, ignoradas } = coletarUrls();
+
+    if (urls.length === 0) {
+      setMensagem({ tipo: "erro", texto: "Nenhuma música selecionada possui PDF no formato escolhido." });
+      return { ok: false, ignoradas };
+    }
 
     setGerando(true);
+    setProgresso(null);
     try {
-      const res = await fetch("/api/merge-pdfs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls }),
-      });
+      const { blob } = await gerarPdfMesclado(urls, setProgresso);
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        setMensagem({
-          tipo: "erro",
-          texto: err?.error ?? `Erro ao gerar PDF (HTTP ${res.status}).`,
-        });
-        return;
-      }
-
-      const blob = await res.blob();
       const downloadUrl = URL.createObjectURL(blob);
       const missaNome = missas.find((m) => m.id === missaId)?.nome ?? "repertorio";
-      const nomeArquivo = `${missaNome.replace(/[^a-zA-Z0-9À-ú\s_-]/g, "").replace(/\s+/g, "_")}_${tipoExportacao === "partitura" ? "partituras" : "cifras"}.pdf`;
+      // Sufixo do arquivo: formato único quando todas as músicas incluídas têm o
+      // mesmo formato efetivo; "repertorio" quando há mistura.
+      const tiposIncluidos = new Set(
+        musicas
+          .filter((m) => selecionadas.has(m.id) && urlDoFormato(m, tipoEfetivo(m)))
+          .map((m) => tipoEfetivo(m))
+      );
+      const sufixo = tiposIncluidos.size === 1
+        ? (tiposIncluidos.has("partitura") ? "partituras" : "cifras")
+        : "repertorio";
+      const nomeArquivo = `${missaNome.replace(/[^a-zA-Z0-9À-ú\s_-]/g, "").replace(/\s+/g, "_")}_${sufixo}.pdf`;
       const a = document.createElement("a");
       a.href = downloadUrl;
       a.download = nomeArquivo;
@@ -307,14 +357,25 @@ export default function Home() {
       a.click();
       a.remove();
       URL.revokeObjectURL(downloadUrl);
-    } catch {
-      setMensagem({ tipo: "erro", texto: "Erro de conexão. Tente novamente." });
+      return { ok: true, ignoradas };
+    } catch (err) {
+      setMensagem({
+        tipo: "erro",
+        texto: err instanceof Error ? err.message : "Erro de conexão. Tente novamente.",
+      });
+      return { ok: false, ignoradas };
     } finally {
       setGerando(false);
+      setProgresso(null);
     }
   }
 
-  const totalSelecionadas = musicas.filter((m) => selecionadas.has(m.id)).length;
+  const musicasSelecionadasOrdenadas = musicas.filter((m) => selecionadas.has(m.id));
+  const totalSelecionadas = musicasSelecionadasOrdenadas.length;
+  // Personalização ativa: algum override difere do formato padrão da música.
+  const temPersonalizacao = musicasSelecionadasOrdenadas.some(
+    (m) => tipoPorMusica[m.id] && tipoPorMusica[m.id] !== tipoPadrao(m)
+  );
 
   return (
     <main className="min-h-screen bg-background">
@@ -337,7 +398,7 @@ export default function Home() {
             value={tempoSelecionado}
             onValueChange={(v) => {
               setTempoSelecionado(v);
-              setMissaId(""); setMusicas([]); setSelecionadas(new Set());
+              setMissaId(""); setMusicas([]); setSelecionadas(new Set()); setTipoPorMusica({}); setPersonalizarAberto(false);
             }}
           >
             <SelectTrigger>
@@ -355,7 +416,7 @@ export default function Home() {
             <button
               type="button"
               className="text-xs text-muted-foreground hover:text-foreground underline"
-              onClick={() => { setTempoSelecionado(""); setMissaId(""); setMusicas([]); setSelecionadas(new Set()); }}
+              onClick={() => { setTempoSelecionado(""); setMissaId(""); setMusicas([]); setSelecionadas(new Set()); setTipoPorMusica({}); setPersonalizarAberto(false); }}
             >
               Limpar filtro
             </button>
@@ -365,7 +426,7 @@ export default function Home() {
         {/* Seletor de Missa */}
         <div className="mt-3 space-y-2">
           <Label>Missa</Label>
-          <Select value={missaId} onValueChange={(v) => { setMissaId(v); setMusicas([]); setSelecionadas(new Set()); if (v) loadMusicas(v); }}>
+          <Select value={missaId} onValueChange={(v) => { setMissaId(v); setMusicas([]); setSelecionadas(new Set()); setTipoPorMusica({}); setPersonalizarAberto(false); if (v) loadMusicas(v); }}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione a missa..." />
             </SelectTrigger>
@@ -528,22 +589,109 @@ export default function Home() {
             <div className="space-y-4 border-t pt-4">
               <div className="space-y-2">
                 <Label>Tipo de repertório</Label>
-                <Select
-                  value={tipoExportacao}
-                  onValueChange={(v) => setTipoExportacao(v as "cifra" | "partitura")}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cifra">
-                      Cifras
-                    </SelectItem>
-                    <SelectItem value="partitura">
-                      Partituras
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={tipoExportacao}
+                    onValueChange={(v) => setTipoExportacao(v as "cifra" | "partitura")}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cifra">
+                        Cifras
+                      </SelectItem>
+                      <SelectItem value="partitura">
+                        Partituras
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {totalSelecionadas > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPersonalizarAberto((v) => !v)}
+                      aria-expanded={personalizarAberto}
+                      aria-pressed={personalizarAberto}
+                      aria-label="Cifra ou partitura por música"
+                      title="Cifra ou partitura por música"
+                      className={cn(
+                        "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md border transition-colors",
+                        personalizarAberto
+                          ? "border-primary bg-accent text-foreground"
+                          : "border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+                      )}
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                      {temPersonalizacao && (
+                        <span
+                          className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background"
+                          aria-label="Há formatos personalizados"
+                        />
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Cifra ou partitura por música (opcional) */}
+                {personalizarAberto && totalSelecionadas > 0 && (
+                    <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
+                      {musicasSelecionadasOrdenadas.map((m) => {
+                        const efetivo = tipoEfetivo(m);
+                        const temCifra = !!m.cifra_pdf_url;
+                        const temPartitura = !!m.partitura_pdf_url;
+                        const semPdf = !temCifra && !temPartitura;
+                        return (
+                          <div key={m.id} className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] text-muted-foreground">
+                                {m.momento}
+                              </p>
+                              <p className="truncate text-sm">{m.titulo}</p>
+                            </div>
+                            {semPdf ? (
+                              <span className="shrink-0 text-xs text-muted-foreground">Sem PDF</span>
+                            ) : (
+                              <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                {(["cifra", "partitura"] as const).map((tipo) => {
+                                  const disponivel = tipo === "cifra" ? temCifra : temPartitura;
+                                  const ativo = efetivo === tipo;
+                                  const Icone = tipo === "cifra" ? BookOpen : FileMusic;
+                                  return (
+                                    <button
+                                      key={tipo}
+                                      type="button"
+                                      disabled={!disponivel}
+                                      aria-pressed={ativo}
+                                      onClick={() =>
+                                        setTipoPorMusica((prev) => ({ ...prev, [m.id]: tipo }))
+                                      }
+                                      className={cn(
+                                        "flex items-center gap-1 px-2.5 py-1.5 text-xs transition-colors",
+                                        ativo
+                                          ? "bg-primary text-primary-foreground"
+                                          : "bg-background text-muted-foreground hover:bg-accent",
+                                        !disponivel && "cursor-not-allowed opacity-40 hover:bg-background"
+                                      )}
+                                      title={
+                                        disponivel
+                                          ? tipo === "cifra"
+                                            ? "Cifra"
+                                            : "Partitura"
+                                          : "Sem PDF deste formato"
+                                      }
+                                    >
+                                      <Icone className="h-3.5 w-3.5" />
+                                      {tipo === "cifra" ? "Cifra" : "Partitura"}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
               </div>
 
               {/* Mensagem de feedback */}
@@ -568,7 +716,11 @@ export default function Home() {
                 {gerando ? (
                   <>
                     <Loader2 className="animate-spin" />
-                    Gerando PDF...
+                    {progresso
+                      ? progresso.fase === "download"
+                        ? `Baixando PDFs ${progresso.baixados}/${progresso.total}...`
+                        : "Mesclando PDFs..."
+                      : "Gerando PDF..."}
                   </>
                 ) : (
                   <>

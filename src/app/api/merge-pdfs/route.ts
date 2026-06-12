@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PDFDocument, PageSizes } from "pdf-lib";
+import { PDFDocument, PageSizes, PDFEmbeddedPage } from "pdf-lib";
 import { createSupabaseServer } from "@/lib/supabase-server";
 
 // Host permitido para download (Storage público do Supabase). Evita SSRF:
@@ -12,6 +12,75 @@ const SUPABASE_HOST = (() => {
   }
 })();
 
+// Quantos PDFs baixar simultaneamente. Mantém o paralelismo (rápido) sem
+// segurar todos os arquivos na memória ao mesmo tempo — importante com o
+// limite de 50 PDFs e/ou arquivos grandes (escaneados).
+const DOWNLOAD_CONCURRENCY = 6;
+
+const [A4_WIDTH, A4_HEIGHT] = PageSizes.A4;
+
+// Desenha uma página já embutida, escalada e centralizada para caber em A4.
+function desenharA4(mergedPdf: PDFDocument, embeddedPage: PDFEmbeddedPage) {
+  const { width: srcW, height: srcH } = embeddedPage.size();
+  const newPage = mergedPdf.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  const scale = Math.min(A4_WIDTH / srcW, A4_HEIGHT / srcH);
+  const scaledW = srcW * scale;
+  const scaledH = srcH * scale;
+
+  newPage.drawPage(embeddedPage, {
+    x: (A4_WIDTH - scaledW) / 2,
+    y: (A4_HEIGHT - scaledH) / 2,
+    width: scaledW,
+    height: scaledH,
+  });
+}
+
+// Acrescenta todas as páginas de um PDF de origem ao merged, normalizadas A4.
+// Tenta embutir o documento inteiro de uma só vez (mais rápido); se isso
+// falhar (ex.: página problemática), cai no caminho página-a-página com o
+// mesmo fallback de copyPages de antes — preservando a resiliência original.
+async function anexarComoA4(mergedPdf: PDFDocument, sourcePdf: PDFDocument) {
+  const sourcePages = sourcePdf.getPages();
+
+  let embeddedPages: PDFEmbeddedPage[] | null = null;
+  try {
+    embeddedPages = await mergedPdf.embedPages(sourcePages);
+  } catch {
+    embeddedPages = null;
+  }
+
+  if (embeddedPages) {
+    for (const embeddedPage of embeddedPages) {
+      desenharA4(mergedPdf, embeddedPage);
+    }
+    return;
+  }
+
+  // Fallback página a página (comportamento original).
+  for (const idx of sourcePdf.getPageIndices()) {
+    try {
+      const [embeddedPage] = await mergedPdf.embedPages([sourcePages[idx]]);
+      desenharA4(mergedPdf, embeddedPage);
+    } catch {
+      const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [idx]);
+      const { width: srcW, height: srcH } = copiedPage.getSize();
+
+      if (Math.abs(srcW - A4_WIDTH) > 1 || Math.abs(srcH - A4_HEIGHT) > 1) {
+        const scale = Math.min(A4_WIDTH / srcW, A4_HEIGHT / srcH);
+        copiedPage.setSize(A4_WIDTH, A4_HEIGHT);
+        copiedPage.scaleContent(scale, scale);
+        copiedPage.translateContent(
+          (A4_WIDTH - srcW * scale) / 2,
+          (A4_HEIGHT - srcH * scale) / 2
+        );
+      }
+
+      mergedPdf.addPage(copiedPage);
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   // 1. Exige sessão autenticada — a rota fica fora do middleware (matcher
   //    exclui `api/`), então a checagem precisa ser feita aqui.
@@ -21,10 +90,7 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json(
-      { error: "Não autenticado." },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   }
 
   let body: unknown;
@@ -69,10 +135,7 @@ export async function POST(request: NextRequest) {
     try {
       parsed = new URL(url);
     } catch {
-      return NextResponse.json(
-        { error: `URL inválida: ${url}` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: `URL inválida: ${url}` }, { status: 400 });
     }
 
     if (parsed.protocol !== "https:" || parsed.host !== SUPABASE_HOST) {
@@ -84,96 +147,101 @@ export async function POST(request: NextRequest) {
   }
 
   const validUrls = urls as string[];
-  const erros: string[] = [];
-  const mergedPdf = await PDFDocument.create();
+  const total = validUrls.length;
+  const encoder = new TextEncoder();
 
-  for (const url of validUrls) {
-    try {
-      const response = await fetch(url);
+  // Resposta em streaming (NDJSON): emite eventos de progresso conforme os
+  // PDFs são baixados/mesclados e, no fim, o PDF final em base64. A validação
+  // acima (auth/body/urls) continua respondendo com status HTTP normais.
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: unknown) =>
+        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
 
-      if (!response.ok) {
-        erros.push(`Falha ao baixar ${url} (HTTP ${response.status})`);
-        continue;
-      }
+      try {
+        const erros: string[] = [];
+        // Mantém cada PDF na sua posição (índice) para preservar a ordem final
+        // mesmo baixando em paralelo.
+        const buffers: (ArrayBuffer | null)[] = new Array(total).fill(null);
+        let baixados = 0;
+        send({ type: "progress", fase: "download", baixados, total });
 
-      const pdfBytes = await response.arrayBuffer();
-      const sourcePdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-
-      const [A4_WIDTH, A4_HEIGHT] = PageSizes.A4;
-
-      const sourcePages = sourcePdf.getPages();
-      const pageIndices = sourcePdf.getPageIndices();
-
-      for (const idx of pageIndices) {
-        try {
-          const [embeddedPage] = await mergedPdf.embedPages([sourcePages[idx]]);
-          const { width: srcW, height: srcH } = embeddedPage.size();
-
-          const newPage = mergedPdf.addPage([A4_WIDTH, A4_HEIGHT]);
-
-          const scale = Math.min(A4_WIDTH / srcW, A4_HEIGHT / srcH);
-          const scaledW = srcW * scale;
-          const scaledH = srcH * scale;
-
-          const x = (A4_WIDTH - scaledW) / 2;
-          const y = (A4_HEIGHT - scaledH) / 2;
-
-          newPage.drawPage(embeddedPage, {
-            x,
-            y,
-            width: scaledW,
-            height: scaledH,
-          });
-        } catch {
-          // Fallback: copia a página e força tamanho A4 via scale
-          const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [idx]);
-          const { width: srcW, height: srcH } = copiedPage.getSize();
-
-          if (Math.abs(srcW - A4_WIDTH) > 1 || Math.abs(srcH - A4_HEIGHT) > 1) {
-            const scaleX = A4_WIDTH / srcW;
-            const scaleY = A4_HEIGHT / srcH;
-            const scale = Math.min(scaleX, scaleY);
-
-            copiedPage.setSize(A4_WIDTH, A4_HEIGHT);
-            copiedPage.scaleContent(scale, scale);
-
-            // Centraliza o conteúdo na página
-            const offsetX = (A4_WIDTH - srcW * scale) / 2;
-            const offsetY = (A4_HEIGHT - srcH * scale) / 2;
-            copiedPage.translateContent(offsetX, offsetY);
+        // Downloads em paralelo com teto de concorrência. Cada worker pega o
+        // próximo índice disponível; falhas individuais não abortam o resto.
+        let cursor = 0;
+        const baixarProximos = async (): Promise<void> => {
+          for (;;) {
+            const i = cursor++;
+            if (i >= total) return;
+            const url = validUrls[i];
+            try {
+              const response = await fetch(url);
+              if (!response.ok) {
+                erros.push(`Falha ao baixar ${url} (HTTP ${response.status})`);
+              } else {
+                buffers[i] = await response.arrayBuffer();
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              erros.push(`Erro ao baixar ${url}: ${message}`);
+            } finally {
+              baixados++;
+              send({ type: "progress", fase: "download", baixados, total });
+            }
           }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, total) }, () =>
+            baixarProximos()
+          )
+        );
 
-          mergedPdf.addPage(copiedPage);
+        // Mescla na ordem original dos índices.
+        send({ type: "progress", fase: "merge", baixados: total, total });
+        const mergedPdf = await PDFDocument.create();
+
+        for (let i = 0; i < total; i++) {
+          const bytes = buffers[i];
+          if (!bytes) continue; // download falhou — já registrado em `erros`
+          try {
+            const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            await anexarComoA4(mergedPdf, sourcePdf);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            erros.push(`Erro ao processar ${validUrls[i]}: ${message}`);
+          }
         }
+
+        if (mergedPdf.getPageCount() === 0) {
+          send({
+            type: "error",
+            error: "Nenhum PDF pôde ser processado.",
+            detalhes: erros,
+          });
+          controller.close();
+          return;
+        }
+
+        const mergedBytes = await mergedPdf.save();
+        send({
+          type: "done",
+          pdfBase64: Buffer.from(mergedBytes).toString("base64"),
+          avisos: erros,
+        });
+        controller.close();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        send({ type: "error", error: `Erro ao gerar PDF: ${message}` });
+        controller.close();
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      erros.push(`Erro ao processar ${url}: ${message}`);
-    }
-  }
-
-  if (mergedPdf.getPageCount() === 0) {
-    return NextResponse.json(
-      {
-        error: "Nenhum PDF pôde ser processado.",
-        detalhes: erros,
-      },
-      { status: 422 }
-    );
-  }
-
-  const mergedBytes = await mergedPdf.save();
-
-  const headers = new Headers({
-    "Content-Type": "application/pdf",
-    "Content-Disposition": 'attachment; filename="repertorio_unificado.pdf"',
-    "Content-Length": String(mergedBytes.byteLength),
+    },
   });
 
-  // Se houve erros parciais, adiciona header informativo
-  if (erros.length > 0) {
-    headers.set("X-Merge-Warnings", JSON.stringify(erros));
-  }
-
-  return new NextResponse(Buffer.from(mergedBytes), { status: 200, headers });
+  return new NextResponse(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
